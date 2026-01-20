@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mini Casino</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+  margin: 0;
+  background: radial-gradient(circle, #004400, #000);
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+h1 { color: gold; }
+nav button {
+  margin: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+}
+.hidden { display: none; }
+
+.game {
+  max-width: 900px;
+  margin: 15px auto;
+  background: #033;
+  padding: 15px;
+  border-radius: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 60px);
+  gap: 10px;
+  justify-content: center;
+  margin: 10px auto;
+}
+
+
+.card {
+  width: 70px;
+  height: 100px;
+  background: white;
+  color: black;
+  border-radius: 10px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mine {
+  width: 60px;
+  height: 60px;
+  background: #0a0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 24px;
+}
+
+.mine:hover {
+  transform: scale(1.05);
+}
+
+
+.mine.boom { background: crimson; }
+.mine.safe { background: gold; }
+
+.controls button, input {
+  padding: 8px 14px;
+  margin: 5px;
+  border-radius: 8px;
+}
+
+#chips {
+  display: inline-block;
+  padding: 6px 12px;
+  background: black;
+  border-radius: 10px;
+  transition: transform .3s, color .3s;
+}
+
+.win { transform: scale(1.2); color: #00ff88; }
+.lose { transform: scale(0.8); color: red; }
+
+.mine {
+  width: 60px;
+  height: 60px;
+  background: #0a0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: transform 0.15s ease;
+}
+
+/* SAFE TILE ANIMATION */
+.mine.safe {
+  animation: pop 0.25s ease-out forwards;
+  box-shadow: 0 0 15px gold;
+}
+
+/* MINE TILE ANIMATION */
+.mine.boom {
+  animation: shake 0.35s ease-in-out forwards;
+  box-shadow: 0 0 20px crimson;
+}
+
+@keyframes pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shake {
+  0%   { transform: translateX(0); }
+  20%  { transform: translateX(-4px); }
+  40%  { transform: translateX(4px); }
+  60%  { transform: translateX(-4px); }
+  80%  { transform: translateX(4px); }
+  100% { transform: translateX(0); }
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🎰 MINI CASINO</h1>
+<div>Chips: <span id="chips">0</span></div>
+
+<nav>
+  <button onclick="location.href='blackjack.html'">Blackjack</button>
+  <button onclick="showGame('mines')">Mines</button>
+  <button onclick="showGame('poker')">Poker</button>
+</nav>
+
+<!-- BLACKJACK (MINI DEMO) -->
+<div id="blackjack" class="game">
+  <h2>🃏 Blackjack (Demo)</h2>
+  <p>Included for completeness</p>
+</div>
+
+<!-- MINES -->
+<div id="mines" class="game hidden">
+  <h2>💣 Mines</h2>
+ Bet: <input id="minesBet" type="number" value="50" min="1">
+Mines: <input id="mineCount" type="number" value="3" min="1" max="24">
+  <div class="grid" id="mineGrid"></div>
+  <div class="controls">
+    <button onclick="startMines()">Start</button>
+    <button onclick="cashOut()">Cash Out</button>
+  </div>
+  <div id="minesMsg"></div>
+</div>
+
+<!-- POKER -->
+<div id="poker" class="game hidden">
+  <h2>♠ Poker</h2>
+  Bet: <input id="pokerBet" type="number" value="100" min="1">
+  <div class="cards" id="pokerPlayer"></div>
+  <div class="cards" id="pokerDealer"></div>
+  <button onclick="dealPoker()">Deal Poker</button>
+  <div id="pokerMsg"></div>
+</div>
+
+<script>
+/* ---------- LOCAL SAVE ---------- */
+let chips = Number(localStorage.getItem("chips")) || 1000;
+const chipsEl = document.getElementById("chips");
+updateChips();
+
+function updateChips(anim) {
+  chipsEl.textContent = chips;
+  localStorage.setItem("chips", chips);
+  chipsEl.className = anim || "";
+  setTimeout(() => chipsEl.className = "", 300);
+}
+
+/* ---------- NAV ---------- */
+function showGame(id) {
+  document.querySelectorAll(".game").forEach(g => g.classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+}
+
+/* ---------- MINES ---------- */
+/* ---------- MINES ---------- */
+let mineSpots = [], revealed = 0, minesBet = 0, mineTotal = 0;
+
+function startMines() {
+  minesBet = +minesBetInput.value;
+  mineTotal = +mineCountInput.value;
+
+  if (
+    minesBet <= 0 ||
+    minesBet > chips ||
+    mineTotal < 1 ||
+    mineTotal > 24
+  ) return;
+
+  mineGrid.innerHTML = "";
+  revealed = 0;
+
+  // 25 tiles total
+  mineSpots = Array(25).fill("safe");
+
+  // Randomly place mines
+  let placed = 0;
+  while (placed < mineTotal) {
+    let i = Math.floor(Math.random() * 25);
+    if (mineSpots[i] !== "boom") {
+      mineSpots[i] = "boom";
+      placed++;
+    }
+  }
+
+  mineSpots.forEach((_, i) => {
+    const d = document.createElement("div");
+    d.className = "mine";
+    d.onclick = () => clickMine(d, i);
+    mineGrid.appendChild(d);
+  });
+
+  minesMsg.textContent = "";
+}
+
+function clickMine(el, i) {
+  if (el.textContent) return;
+
+  if (mineSpots[i] === "boom") {
+    el.classList.add("boom");
+    el.textContent = "💥";
+    chips -= minesBet;
+    updateChips("lose");
+    minesMsg.textContent = "💣 You hit a mine!";
+    revealAll();
+  } else {
+    el.classList.add("safe");
+    el.textContent = "💎";
+    revealed++;
+  }
+}
+
+function cashOut() {
+  if (!revealed) return;
+
+  // Risk-based multiplier
+  const multiplier = 1 + (mineTotal / 10);
+  const win = Math.floor(revealed * minesBet * multiplier);
+
+  chips += win;
+  updateChips("win");
+  minesMsg.textContent = `💰 Cashed out +${win}`;
+  revealAll();
+}
+
+function revealAll() {
+  document.querySelectorAll(".mine").forEach((el, i) => {
+    if (!el.textContent) {
+      if (mineSpots[i] === "boom") {
+        el.classList.add("boom");
+        el.textContent = "💣";
+      } else {
+        el.classList.add("safe");
+        el.textContent = "💎";
+      }
+    }
+  });
+}
+
+
+/* ---------- POKER ---------- */
+const suits = ["♠","♥","♦","♣"];
+const ranks = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+
+function drawCard() {
+  return {
+    r: ranks[Math.floor(Math.random()*13)],
+    s: suits[Math.floor(Math.random()*4)]
+  };
+}
+
+function rankValue(r) {
+  return ranks.indexOf(r);
+}
+
+function evaluate(hand) {
+  const vals = hand.map(c => rankValue(c.r)).sort((a,b)=>a-b);
+  const suitsArr = hand.map(c => c.s);
+  const counts = {};
+  vals.forEach(v => counts[v] = (counts[v]||0)+1);
+
+  const pairs = Object.values(counts).sort((a,b)=>b-a);
+  const flush = suitsArr.every(s => s === suitsArr[0]);
+  const straight = vals.every((v,i,a)=>i===0 || v===a[i-1]+1);
+
+  if (straight && flush) return 8;
+  if (pairs[0] === 4) return 7;
+  if (pairs[0] === 3 && pairs[1] === 2) return 6;
+  if (flush) return 5;
+  if (straight) return 4;
+  if (pairs[0] === 3) return 3;
+  if (pairs[0] === 2 && pairs[1] === 2) return 2;
+  if (pairs[0] === 2) return 1;
+  return 0;
+}
+
+function dealPoker() {
+  const bet = +pokerBet.value;
+  if (bet <= 0 || bet > chips) return;
+
+  pokerPlayer.innerHTML = "";
+  pokerDealer.innerHTML = "";
+
+  const player = Array.from({length:5}, drawCard);
+  const dealer = Array.from({length:5}, drawCard);
+
+  player.forEach(c => pokerPlayer.innerHTML += `<div class="card">${c.r}${c.s}</div>`);
+  dealer.forEach(c => pokerDealer.innerHTML += `<div class="card">${c.r}${c.s}</div>`);
+
+  const pRank = evaluate(player);
+  const dRank = evaluate(dealer);
+
+  if (pRank > dRank) {
+    chips += bet;
+    updateChips("win");
+    pokerMsg.textContent = "You win!";
+  } else {
+    chips -= bet;
+    updateChips("lose");
+    pokerMsg.textContent = "Dealer wins.";
+  }
+}
+
+/* ---------- DOM BINDS ---------- */
+const mineGrid = document.getElementById("mineGrid");
+const minesMsg = document.getElementById("minesMsg");
+const minesBetInput = document.getElementById("minesBet");
+const pokerBet = document.getElementById("pokerBet");
+const pokerPlayer = document.getElementById("pokerPlayer");
+const pokerDealer = document.getElementById("pokerDealer");
+const pokerMsg = document.getElementById("pokerMsg");
+const mineCountInput = document.getElementById("mineCount");
+
+</script>
+
+</body>
+</html>

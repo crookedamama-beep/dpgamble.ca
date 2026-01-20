@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blackjack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  margin: 0;
+  background: radial-gradient(circle, #063, #000);
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+h1 { color: gold; }
+
+.table {
+  max-width: 900px;
+  margin: auto;
+  background: #044;
+  padding: 15px;
+  border-radius: 20px;
+}
+
+.cards {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-height: 120px;
+  margin-bottom: 10px;
+}
+
+.card {
+  width: 75px;
+  height: 110px;
+  background: white;
+  color: black;
+  border-radius: 10px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: slide .2s ease-out;
+}
+.card.red { color: crimson; }
+
+.active {
+  outline: 3px solid gold;
+}
+
+@keyframes slide {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.controls button, input {
+  padding: 8px 14px;
+  margin: 5px;
+  border-radius: 8px;
+}
+
+#chips {
+  display: inline-block;
+  padding: 6px 12px;
+  background: black;
+  border-radius: 10px;
+  transition: transform .3s, color .3s;
+}
+.win { transform: scale(1.2); color: #00ff88; }
+.lose { transform: scale(0.8); color: red; }
+
+.chips {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.chip {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 4px dashed white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.chip[data-v="10"]  { background: #ccc; color:black; }
+.chip[data-v="25"]  { background: green; }
+.chip[data-v="50"]  { background: red; }
+.chip[data-v="100"] { background: blue; }
+.chip[data-v="250"] { background: purple; }
+
+.bet-zone {
+  min-height: 70px;
+  border: 2px dashed gold;
+  border-radius: 12px;
+  margin: 10px auto;
+  max-width: 300px;
+  padding: 8px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+}
+
+.stack .chip {
+  margin-top: -30px;
+  animation: stack .2s ease;
+}
+
+@keyframes stack {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🃏 BLACKJACK</h1>
+<div>Chips: <span id="chips">0</span></div>
+
+<div class="table">
+
+Bet:
+<div class="chips">
+  <div class="chip" data-v="10">10</div>
+  <div class="chip" data-v="25">25</div>
+  <div class="chip" data-v="50">50</div>
+  <div class="chip" data-v="100">100</div>
+  <div class="chip" data-v="250">250</div>
+</div>
+
+<div class="bet-zone">
+  <div class="stack" id="stack"></div>
+  <div id="betText">Click chips to bet</div>
+</div>
+
+<div class="controls">
+  <button onclick="undoBet()">Undo Bet</button>
+</div>
+
+<div class="controls">
+  <button onclick="deal()">Deal</button>
+  <button onclick="hit()" id="hit" disabled>Hit</button>
+  <button onclick="stand()" id="stand" disabled>Stand</button>
+  <button onclick="doubleDown()" id="double" disabled>Double</button>
+  <button onclick="splitHand()" id="split" disabled>Split</button>
+</div>
+
+
+<h3>Dealer</h3>
+<div class="cards" id="dealer"></div>
+
+<h3 id="handTitle">Your Hand</h3>
+<div class="cards" id="player"></div>
+
+<div id="msg"></div>
+
+<br>
+<a href="casino.html" style="color:gold;">⬅ Back to Casino</a>
+
+</div>
+
+<script>
+/* ---------- SAVE ---------- */
+let chips = Number(localStorage.getItem("chips")) || 1000;
+const chipsEl = document.getElementById("chips");
+
+function updateChips(anim) {
+  chipsEl.textContent = chips;
+  localStorage.setItem("chips", chips);
+  chipsEl.className = anim || "";
+  setTimeout(()=>chipsEl.className="",300);
+}
+updateChips();
+
+/* ---------- GAME STATE ---------- */
+const suits = ["♠","♥","♦","♣"];
+const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+let deck = [];
+let dealer = [];
+let hands = [];
+let bets = [];
+let activeHand = 0;
+let game = false;
+let doubled = false;
+
+/* ---------- HELPERS ---------- */
+function makeDeck() {
+  deck = [];
+  for (let s of suits)
+    for (let r of ranks)
+      deck.push({r,s});
+  deck.sort(()=>Math.random()-0.5);
+}
+
+function value(hand) {
+  let total = 0, aces = 0;
+  hand.forEach(c=>{
+    if (c.r === "A") { total += 11; aces++; }
+    else if (["J","Q","K"].includes(c.r)) total += 10;
+    else total += Number(c.r);
+  });
+  while (total > 21 && aces--) total -= 10;
+  return total;
+}
+
+function cardHTML(c) {
+  const red = ["♥","♦"].includes(c.s);
+  return `<div class="card ${red?'red':''}">${c.r}${c.s}</div>`;
+}
+
+/* ---------- RENDER ---------- */
+function render(showDealer=false) {
+  dealerEl.innerHTML = showDealer
+    ? dealer.map(cardHTML).join("")
+    : cardHTML(dealer[0]) + `<div class="card">🂠</div>`;
+
+  playerEl.innerHTML = hands[activeHand].map(cardHTML).join("");
+  handTitle.textContent = hands.length > 1
+    ? `Hand ${activeHand+1} of ${hands.length}`
+    : "Your Hand";
+}
+
+/* ---------- DEAL ---------- */
+function deal() {
+  if (bet <= 0 || bet > chips) return;
+
+  makeDeck();
+  dealer = [deck.pop(), deck.pop()];
+  hands = [[deck.pop(), deck.pop()]];
+  bets = [bet];
+  activeHand = 0;
+  game = true;
+  doubled = false;
+
+  hitBtn.disabled = false;
+  standBtn.disabled = false;
+  doubleBtn.disabled = false;
+  splitBtn.disabled = !canSplit();
+  msg("");
+
+  render(false);
+}
+
+/* ---------- ACTIONS ---------- */
+function hit() {
+  if (!game) return;
+  hands[activeHand].push(deck.pop());
+  render(false);
+  if (value(hands[activeHand]) > 21) nextHand();
+}
+
+function stand() {
+  nextHand();
+}
+
+function doubleDown() {
+  if (doubled) return;
+  const bet = bets[activeHand];
+  if (chips < bet) return;
+  chips -= bet;
+  bets[activeHand] *= 2;
+  updateChips();
+  hands[activeHand].push(deck.pop());
+  doubled = true;
+  render(false);
+  nextHand();
+}
+
+function splitHand() {
+  if (!canSplit()) return;
+  const bet = bets[0];
+  if (chips < bet) return;
+
+  chips -= bet;
+  updateChips();
+
+  const [c1,c2] = hands[0];
+  hands = [[c1, deck.pop()], [c2, deck.pop()]];
+  bets = [bet, bet];
+  activeHand = 0;
+
+  splitBtn.disabled = true;
+  render(false);
+}
+
+function canSplit() {
+  return hands.length === 1 &&
+         hands[0].length === 2 &&
+         hands[0][0].r === hands[0][1].r;
+}
+
+/* ---------- HAND FLOW ---------- */
+function nextHand() {
+  if (activeHand < hands.length - 1) {
+    activeHand++;
+    render(false);
+  } else {
+    dealerTurn();
+  }
+}
+
+function dealerTurn() {
+  while (value(dealer) < 17) dealer.push(deck.pop());
+  render(true);
+  settle();
+}
+
+/* ---------- RESULTS ---------- */
+function settle() {
+  let net = 0;
+
+  hands.forEach((hand,i)=>{
+    const hv = value(hand);
+    const dv = value(dealer);
+    if (hv <= 21 && (dv > 21 || hv > dv)) net += bets[i];
+    else if (hv > 21 || hv < dv) net -= bets[i];
+  });
+
+  chips += net;
+  updateChips(net > 0 ? "win" : "lose");
+  msg(net > 0 ? "🎉 You win!" : net < 0 ? "😞 You lose." : "🤝 Push");
+
+  hitBtn.disabled = true;
+  standBtn.disabled = true;
+  doubleBtn.disabled = true;
+  splitBtn.disabled = true;
+  game = false;
+
+  bet = 0;
+betHistory = [];
+stack.innerHTML = "";
+betText.textContent = "Click chips to bet";
+
+}
+
+let bet = 0;
+let betHistory = [];
+
+document.querySelectorAll(".chip").forEach(chip => {
+  chip.onclick = () => {
+    if (game) return;
+    const v = +chip.dataset.v;
+    if (chips >= bet + v) {
+      bet += v;
+      betHistory.push(v);
+      stack.appendChild(chip.cloneNode(true));
+      betText.textContent = "Bet: " + bet;
+    }
+  };
+});
+
+function undoBet() {
+  if (game || !betHistory.length) return;
+  bet -= betHistory.pop();
+  stack.removeChild(stack.lastChild);
+  betText.textContent = bet ? `Bet: ${bet}` : "Click chips to bet";
+}
+
+
+/* ---------- DOM ---------- */
+const dealerEl = document.getElementById("dealer");
+const playerEl = document.getElementById("player");
+const hitBtn = document.getElementById("hit");
+const standBtn = document.getElementById("stand");
+const doubleBtn = document.getElementById("double");
+const splitBtn = document.getElementById("split");
+const betInput = document.getElementById("bet");
+const msgEl = document.getElementById("msg");
+const handTitle = document.getElementById("handTitle");
+const stack = document.getElementById("stack");
+const betText = document.getElementById("betText");
+
+function msg(t){ msgEl.textContent = t; }
+</script>
+
+</body>
+</html>
